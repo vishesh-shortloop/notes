@@ -15,8 +15,22 @@ Makefile targets and the commands shown in the README in order.
 | Manual changes are detected and removed by the next deploy | *Drift* |
 | Metrics are scraped; SLO alert fires on an outage and clears after recovery | *Prometheus*, *Outage drill*, *Recovery* |
 
-CI evidence: the pipeline run for the PR's final commit (GitHub → Actions → `ci`) shows the same steps on a
-GitHub-hosted kind cluster, ending with `/version` matching the commit SHA.
+## CI/CD run
+
+Pipeline run for commit `0aef80a9e18e0fe670abbc8a8b568d84695a8a25` (PR #1):
+https://github.com/vishesh-shortloop/notes/actions/runs/39129026105
+
+| Job | Result | What it did |
+|---|---|---|
+| test | success | pytest, `helm lint`, Trivy secret + misconfiguration scan |
+| build | success | built `ghcr.io/vishesh-shortloop/notes:0aef80a9…` with `APP_VERSION` = commit SHA, Trivy image scan |
+| e2e | success | created a kind cluster, `make deploy` of that image, `helm test` user journey, `/version` == `0aef80a9…` |
+| publish | skipped | by design on PRs; runs on `main` after approval in the `production` environment |
+
+Commits after `1326783` changed only the workflow file and this document, not the app, chart or Makefile,
+so the local run below applies unchanged to the final version.
+
+## Local cluster run
 
 Limitations seen in this run: `NotesHighLatency` went *pending* during the outage because failing Redis
 connections are slower than normal requests; it never fired. The bad-release revision appears as `failed`
