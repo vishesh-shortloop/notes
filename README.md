@@ -88,7 +88,7 @@ pipeline proves deployability on its own kind cluster and the local cluster is d
 - **Automatic rollback**: `helm upgrade --rollback-on-failure --wait` reverts to the previous release if the new pods are not ready within the timeout.
 - **Manual rollback**: `make rollback` (previous revision) or `make rollback REV=3`.
 - **Traceability**: image tag = commit SHA; the same SHA is in `/version`, every log line (`version`), the pod label `app.kubernetes.io/version`, the image label `org.opencontainers.image.revision`, and the Helm revision description (`helm history`).
-- **Drift**: `make drift` diffs what Helm last applied against the live cluster (`kubectl diff`), so manual `kubectl edit`s show up. Config changes roll pods automatically via a ConfigMap checksum annotation.
+- **Drift**: `make drift` diffs what Helm last applied against the live cluster (`kubectl diff`), so manual `kubectl edit`/`scale` changes show up. `make deploy` uses `--force-conflicts`, so the chart in git always wins and the next deploy removes drift. Config changes roll pods automatically via a ConfigMap checksum annotation.
 
 ## Configuration
 

@@ -32,10 +32,10 @@ secret:
 	$(KUBECTL) -n $(NS) get secret notes-redis >/dev/null 2>&1 || \
 	  $(KUBECTL) -n $(NS) create secret generic notes-redis --from-literal=redis-password=$$(openssl rand -hex 24)
 
-# --rollback-on-failure rolls back automatically if the new pods never become ready.
+# --rollback-on-failure reverts if new pods never become ready; --force-conflicts makes the chart win over manual edits.
 deploy: secret
 	$(HELM) upgrade --install notes chart -n $(NS) --set image.repository=$(IMAGE) --set image.tag=$(TAG) \
-	  --rollback-on-failure --wait --timeout 3m --description "deploy $(TAG)" $(EXTRA)
+	  --rollback-on-failure --force-conflicts --wait --timeout 3m --description "deploy $(TAG)" $(EXTRA)
 
 smoke:
 	$(HELM) test notes -n $(NS) --logs
