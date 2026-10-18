@@ -1,0 +1,29 @@
+image:
+  repository: notes
+  tag: dev
+  pullPolicy: IfNotPresent
+
+replicas: 2
+logLevel: INFO
+
+resources:
+  requests: { cpu: 50m, memory: 96Mi }
+  limits: { cpu: 250m, memory: 192Mi }
+
+# Secret with key "redis-password"; created outside the chart (see Makefile).
+existingSecret: notes-redis
+
+redis:
+  image: redis:7.4-alpine
+  storage: 1Gi
+  resources:
+    requests: { cpu: 25m, memory: 32Mi }
+    limits: { cpu: 200m, memory: 128Mi }
+
+tracing:
+  enabled: true
+  endpoint: http://jaeger.monitoring:4318
+
+# Needs kube-prometheus-stack CRDs (make monitoring).
+monitoring:
+  enabled: true

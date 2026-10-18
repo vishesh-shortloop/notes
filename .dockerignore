@@ -1,0 +1,5 @@
+*
+!app/
+app/test_*.py
+app/requirements-dev.txt
+**/__pycache__

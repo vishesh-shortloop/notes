@@ -1,0 +1,85 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r app/requirements-dev.txt && pytest -q app
+      - uses: azure/setup-helm@v4
+        with: { version: v4.3.1 }
+      - run: helm lint chart
+      - name: Scan repo for secrets and misconfigurations
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: secret,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --build-arg APP_VERSION=${{ github.sha }} -t $IMAGE:${{ github.sha }} .
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ github.sha }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - run: docker save $IMAGE:${{ github.sha }} -o image.tar
+      - uses: actions/upload-artifact@v4
+        with: { name: image, path: image.tar, retention-days: 1 }
+
+  # Deploys the exact image built above to a throwaway kind cluster and runs the user journey.
+  e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: image }
+      - uses: azure/setup-helm@v4
+        with: { version: v4.3.1 }
+      - uses: helm/kind-action@v1
+        with: { cluster_name: notes }
+      - run: docker load -i image.tar && kind load docker-image $IMAGE:${{ github.sha }} --name notes
+      - run: make deploy IMAGE=$IMAGE TAG=${{ github.sha }} EXTRA="-f chart/values-ci.yaml"
+      - run: make smoke status
+      - name: Running version matches commit
+        run: |
+          kubectl -n notes port-forward svc/notes-api 8080:80 & sleep 3
+          curl -fsS localhost:8080/version | tee /dev/stderr | grep -q "${{ github.sha }}"
+      - if: failure()
+        run: kubectl -n notes get events --sort-by=.lastTimestamp; kubectl -n notes logs -l app=notes-api --tail=50
+
+  # Publishing a release image needs approval on the "production" environment.
+  publish:
+    if: github.ref == 'refs/heads/main'
+    needs: e2e
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: image }
+      - run: docker load -i image.tar
+      - run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - run: docker push $IMAGE:${{ github.sha }}

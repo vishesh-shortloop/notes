@@ -1,0 +1,11 @@
+# Redis only accepts traffic from the API pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notes-redis
+spec:
+  podSelector: { matchLabels: { app: notes-redis } }
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{ podSelector: { matchLabels: { app: notes-api } } }]
+      ports: [{ port: 6379 }]
