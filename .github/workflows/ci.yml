@@ -10,12 +10,15 @@ permissions:
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
+  # On PRs github.sha is a temporary merge commit; build and tag the branch's real commit instead.
+  SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { ref: "${{ env.SHA }}" }
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with: { python-version: "3.12" }
       - run: pip install -r app/requirements-dev.txt && pytest -q app
@@ -35,15 +38,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - run: docker build --build-arg APP_VERSION=${{ github.sha }} -t "$IMAGE:${{ github.sha }}" .
+        with: { ref: "${{ env.SHA }}" }
+      - run: docker build --build-arg APP_VERSION=${{ env.SHA }} -t "$IMAGE:${{ env.SHA }}" .
       - name: Scan image for vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.IMAGE }}:${{ github.sha }}
+          image-ref: ${{ env.IMAGE }}:${{ env.SHA }}
           severity: CRITICAL
           ignore-unfixed: true
           exit-code: "1"
-      - run: docker save "$IMAGE:${{ github.sha }}" -o image.tar
+      - run: docker save "$IMAGE:${{ env.SHA }}" -o image.tar
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with: { name: image, path: image.tar, retention-days: 1 }
 
@@ -53,19 +57,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { ref: "${{ env.SHA }}" }
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with: { name: image }
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
         with: { version: v4.3.1 }
       - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
         with: { cluster_name: notes }
-      - run: docker load -i image.tar && kind load docker-image "$IMAGE:${{ github.sha }}" --name notes
-      - run: make deploy IMAGE="$IMAGE" TAG=${{ github.sha }} EXTRA="-f chart/values-ci.yaml"
+      - run: docker load -i image.tar && kind load docker-image "$IMAGE:${{ env.SHA }}" --name notes
+      - run: make deploy IMAGE="$IMAGE" TAG=${{ env.SHA }} EXTRA="-f chart/values-ci.yaml"
       - run: make smoke status
       - name: Running version matches commit
         run: |
           kubectl -n notes port-forward svc/notes-api 8080:80 & sleep 3
-          curl -fsS localhost:8080/version | tee /dev/stderr | grep -q "${{ github.sha }}"
+          curl -fsS localhost:8080/version | tee /dev/stderr | grep -q "${{ env.SHA }}"
       - if: failure()
         run: kubectl -n notes get events --sort-by=.lastTimestamp; kubectl -n notes logs -l app=notes-api --tail=50
 
@@ -82,4 +87,4 @@ jobs:
         with: { name: image }
       - run: docker load -i image.tar
       - run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-      - run: docker push "$IMAGE:${{ github.sha }}"
+      - run: docker push "$IMAGE:${{ env.SHA }}"
