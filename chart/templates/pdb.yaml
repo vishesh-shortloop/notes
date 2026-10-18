@@ -1,0 +1,10 @@
+{{- if gt (int .Values.replicas) 1 }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: notes-api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: notes-api }
+{{- end }}

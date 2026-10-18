@@ -1,0 +1,24 @@
+# `helm test` runs the user journey: write a note, read it back, check the version.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: notes-smoke
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext: { runAsNonRoot: true, runAsUser: 100, seccompProfile: { type: RuntimeDefault } }
+  containers:
+    - name: smoke
+      image: curlimages/curl:8.10.1
+      securityContext: {{- include "notes.podSecurity" . | nindent 8 }}
+      command: ["sh", "-ec"]
+      args:
+        - |
+          note="smoke-$(date +%s)"
+          curl -fsS -X POST http://notes-api/notes -H 'content-type: application/json' -d "{\"text\":\"$note\"}"
+          curl -fsS http://notes-api/notes | grep -q "$note"
+          curl -fsS http://notes-api/version | grep -q '"{{ .Values.image.tag }}"'
+          echo "smoke test passed for version {{ .Values.image.tag }}"

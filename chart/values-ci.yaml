@@ -1,0 +1,6 @@
+# CI kind cluster: no monitoring stack, single replica.
+replicas: 1
+tracing:
+  enabled: false
+monitoring:
+  enabled: false

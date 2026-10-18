@@ -1,0 +1,55 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: notes-api
+  labels: {{- include "notes.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels: { app: notes-api }
+  endpoints: [{ port: http, path: /metrics, interval: 15s }]
+---
+# SLO: 99% of requests succeed (non-5xx) and p95 latency stays under 300ms.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: notes-api
+  labels: {{- include "notes.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: notes-api
+      rules:
+        - alert: NotesApiDown
+          expr: sum(up{service="notes-api"}) == 0 or absent(up{service="notes-api"})
+          for: 2m
+          labels: { severity: critical }
+          annotations:
+            summary: No notes-api pod is being scraped.
+            runbook: "kubectl get pods -l app=notes-api; kubectl describe pod; check recent `helm history notes`"
+        - alert: NotesHighErrorRate
+          expr: |
+            sum(rate(http_requests_total{service="notes-api",status=~"5.."}[5m]))
+              / sum(rate(http_requests_total{service="notes-api"}[5m])) > 0.01
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: More than 1% of requests are failing (SLO breach).
+            runbook: "Check /readyz and Redis pod; if it started after a deploy run `make rollback`"
+        - alert: NotesHighLatency
+          expr: |
+            histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{service="notes-api"}[5m]))) > 0.3
+          for: 10m
+          labels: { severity: warning }
+          annotations:
+            summary: p95 latency above 300ms.
+            runbook: "Inspect slow traces in Jaeger and pod CPU throttling (kubectl top / resource limits)"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: notes-dashboard
+  labels:
+    grafana_dashboard: "1"
+data:
+  notes.json: {{ .Files.Get "dashboard.json" | toJson }}
+{{- end }}
